@@ -6,7 +6,7 @@ import (
 	"log"
 	"net"
 	"os"
-	"strings"
+	"sync"
 
 	"github.com/dikuropiatnyk/dh-chat/internal/constants"
 	"github.com/dikuropiatnyk/dh-chat/pkg/communication"
@@ -30,31 +30,68 @@ func (u *DHUser) Connect() {
 	u.SendData(conn)
 }
 
-func getInput(prompt string, reader *bufio.Reader) (string, error) {
-	fmt.Print(prompt)
-	input, err := reader.ReadString('\n')
+func confirmChat(userConnection net.Conn, buffer []byte, reader *bufio.Reader) error {
+	userConfirmation, err := communication.GetInput("Type the confirmation password: ", reader)
 	if err != nil {
-		return "", err
+		log.Fatalln("Couldn't get the confirmation:", err)
 	}
-	return strings.Trim(input, "\n"), nil
+
+	// Send the confirmation to the user
+	err = communication.SendMessage(userConnection, userConfirmation)
+	if err != nil {
+		return err
+	}
+	// Read the confirmation from the interlocutor
+	chatConfirmation, err := communication.ReadMessage(userConnection, buffer)
+	if err != nil {
+		return err
+	}
+	if chatConfirmation == constants.CHAT_CONFIRMED {
+		log.Println("Chat confirmed!")
+	} else {
+		log.Fatalln("Chat is not confirmed!")
+	}
+	return nil
+}
+
+func handleServerResponse(conn net.Conn, buffer []byte, wg *sync.WaitGroup) {
+	defer wg.Done()
+	for {
+		serverMessage, err := communication.ReadMessage(conn, buffer)
+		if err != nil {
+			log.Fatalln(err)
+		}
+		fmt.Printf("[CHAT] => %s\n", serverMessage)
+	}
+}
+
+func handleUserResponse(conn net.Conn, reader *bufio.Reader, wg *sync.WaitGroup) {
+	defer wg.Done()
+	for {
+		userMessage, err := communication.GetInput("[CHAT]: ", reader)
+		if err != nil {
+			log.Fatalln(err)
+		}
+		communication.SendMessage(conn, userMessage)
+	}
 }
 
 func (u *DHUser) SendData(conn net.Conn) {
 	reader := bufio.NewReader(os.Stdin)
 
 	// Read user input and send it to the server
-	userName, err := getInput("Enter your name: ", reader)
+	userName, err := communication.GetInput("Enter your name: ", reader)
 	if err != nil {
-		log.Fatalln("Couldn't read your name:", err)
+		log.Fatalln("Couldn't read the name:", err)
 	}
-	interlocutorName, err := getInput("Enter interlocutor's name: ", reader)
+	interlocutorName, err := communication.GetInput("Enter interlocutor's name: ", reader)
 	if err != nil {
 		log.Fatalln("Couldn't read the interlocutor's name:", err)
 	}
 	// Concatenate the user name and the interlocutor's name
-	communication.SendMessage(conn, userName+":"+interlocutorName)
+	communication.SendMessage(conn, userName+constants.DATA_SEPARATOR+interlocutorName)
 
-	buffer := make([]byte, 2048)
+	buffer := make([]byte, constants.BUFFER_SIZE)
 	// First reading from the connection to get the user name and the interlocutor
 	serverResponse, err := communication.ReadMessage(conn, buffer)
 	if err != nil {
@@ -68,10 +105,19 @@ func (u *DHUser) SendData(conn net.Conn) {
 		}
 		if serverUpdate == constants.INTERLOCUTOR_FOUND {
 			log.Println("Interlocutor found! Start chatting...")
+			confirmChat(conn, buffer, reader)
 		}
 	} else if serverResponse == constants.INTERLOCUTOR_FOUND {
 		log.Println("Interlocutor found! Start chatting...")
+		confirmChat(conn, buffer, reader)
 	}
+	log.Println("Let the chat begin!")
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go handleServerResponse(conn, buffer, &wg)
+	go handleUserResponse(conn, reader, &wg)
+	wg.Wait()
 }
 
 func main() {
