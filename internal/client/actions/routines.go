@@ -17,17 +17,19 @@ func HandleServerResponse(conn net.Conn, buffer []byte, wg *sync.WaitGroup) {
 		if err != nil {
 			log.Fatalln(err)
 		}
-		fmt.Printf("[CHAT] => %s\n", serverMessage)
+		fmt.Printf("\n>> %s\n", serverMessage)
 	}
 }
 
 func HandleUserResponse(conn net.Conn, reader *bufio.Reader, wg *sync.WaitGroup) {
 	defer wg.Done()
 	for {
-		userMessage, err := communication.GetInput("[CHAT]: ", reader)
+		userMessage, err := communication.GetInput("", reader)
 		if err != nil {
 			log.Fatalln(err)
 		}
-		communication.SendMessage(conn, userMessage)
+		if err = communication.SendMessage(conn, userMessage); err != nil {
+			log.Fatalln(err)
+		}
 	}
 }

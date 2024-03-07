@@ -9,38 +9,48 @@ import (
 	"github.com/dikuropiatnyk/dh-chat/pkg/communication"
 )
 
+// New error type for closed read channel
+var ErrReadChannelClosed = errors.New("read channel is closed")
+
 type DHClient struct {
-	userAddress  net.Addr
-	name         string
-	interlocutor string
-	readChannel  chan string
-	writeChannel chan string
+	clientAddress net.Addr
+	name          string
+	interlocutor  string
+	readChannel   chan string
+	writeChannel  chan string
 }
 
-func (u *DHClient) syncWithInterlocutor(userConnection net.Conn, buffer []byte) error {
-	// Collect the final confirmation from the current user via the userConnection
-	userConfirmation, err := communication.ReadMessage(userConnection, buffer)
+func (c *DHClient) Close() {
+	if c.writeChannel != nil {
+		close(c.writeChannel)
+	}
+}
+
+func (c *DHClient) SyncWithInterlocutor(clientConnection net.Conn, buffer []byte) error {
+	// Collect the final confirmation from the current client via the clientConnection
+	clientConfirmation, err := communication.ReadMessage(clientConnection, buffer)
 	if err != nil {
 		return err
 	}
-	log.Printf("Received confirmation from %s!", u.name)
-	// Send the user confirmation to the interlocutor
-	u.writeChannel <- userConfirmation
-	log.Printf("Wrote to channel %s!", u.name)
+	log.Printf("Received confirmation from %s!", c.name)
+	// Send the client confirmation to the interlocutor
+	c.writeChannel <- clientConfirmation
 
 	// Wait for the interlocutor to confirm the chat
-	interlocutorConfirmation := <-u.readChannel
+	interlocutorConfirmation, ok := <-c.readChannel
+	if !ok {
+		return ErrReadChannelClosed
+	}
 
-	if userConfirmation != interlocutorConfirmation {
+	if clientConfirmation != interlocutorConfirmation {
 		return errors.New("failed chat confirmation")
 	}
 
-	err = communication.SendMessage(userConnection, constants.CHAT_CONFIRMED)
-	if err != nil {
+	if err = communication.SendMessage(clientConnection, constants.CHAT_CONFIRMED); err != nil {
 		return err
 	}
 
-	log.Printf("Successful chat synchronization for %s!", u.name)
+	log.Printf("Successful chat synchronization for %s!", c.name)
 
 	return nil
 }

@@ -6,6 +6,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/dikuropiatnyk/dh-chat/internal/constants"
 	"github.com/dikuropiatnyk/dh-chat/internal/server/actions"
@@ -47,31 +48,34 @@ func (s *DHServer) AcceptConnections() {
 }
 
 func (s *DHServer) HandleConnection(conn net.Conn) {
-	defer conn.Close()
+	defer actions.CloseConnection(conn)
 	log.Println("Received connection from", conn.RemoteAddr())
 	buffer := make([]byte, constants.BUFFER_SIZE)
-	// First reading from the connection to get the user name and the interlocutor
-	userData, err := communication.ReadMessage(conn, buffer)
+	// First reading from the connection to get the client name and the interlocutor
+	clientData, err := communication.ReadMessage(conn, buffer)
 	if err != nil {
 		return
 	}
-	// Split the user data into the user name and the interlocutor
-	// The user data is in the format "userName;interlocutor"
-	userDataSlice := strings.Split(userData, constants.DATA_SEPARATOR)
-	userName, interlocutor := userDataSlice[0], userDataSlice[1]
-	user := &DHClient{userAddress: conn.RemoteAddr(), name: userName, interlocutor: interlocutor}
-	defer close(user.readChannel)
+	// Split the client data into the client name and the interlocutor
+	// The client data is in the format "clientName;interlocutor"
+	clientDataSlice := strings.Split(clientData, constants.DATA_SEPARATOR)
+	clientName, interlocutor := clientDataSlice[0], clientDataSlice[1]
+
+	client := &DHClient{clientAddress: conn.RemoteAddr(), name: clientName, interlocutor: interlocutor}
+	defer client.Close()
 
 	// s.mut.Lock()
 	// Check if the interlocutor is in the waiting pool
-	availableUser, ok := s.waitingPool[interlocutor]
-	if ok && availableUser.interlocutor == userName {
-		user.readChannel, user.writeChannel = availableUser.writeChannel, availableUser.readChannel
-		communication.SendMessage(conn, constants.INTERLOCUTOR_FOUND)
-		user.writeChannel <- constants.INTERLOCUTOR_FOUND
+	availableclient, ok := s.waitingPool[interlocutor]
+	if ok && availableclient.interlocutor == clientName {
+		client.readChannel, client.writeChannel = availableclient.writeChannel, availableclient.readChannel
+		if err = communication.SendMessage(conn, constants.INTERLOCUTOR_FOUND); err != nil {
+			return
+		}
+		client.writeChannel <- constants.INTERLOCUTOR_FOUND
 
-		// Synchronize the chat between the current user and the interlocutor
-		err := user.syncWithInterlocutor(conn, buffer)
+		// Synchronize the chat between the current client and the interlocutor
+		err := client.SyncWithInterlocutor(conn, buffer)
 		if err != nil {
 			log.Println("Chat synchronization error:", err)
 			return
@@ -79,16 +83,32 @@ func (s *DHServer) HandleConnection(conn net.Conn) {
 		// Remove the interlocutor from the waiting pool
 		delete(s.waitingPool, interlocutor)
 	} else {
-		user.readChannel, user.writeChannel = make(chan string, 2), make(chan string, 2)
-		s.waitingPool[userName] = user
-		communication.SendMessage(conn, constants.NO_INTERLOCUTOR)
+		client.readChannel, client.writeChannel = make(chan string, 2), make(chan string, 2)
+		s.waitingPool[clientName] = client
+		if err = communication.SendMessage(conn, constants.NO_INTERLOCUTOR); err != nil {
+			return
+		}
 		// Set up a blocking waiter until the interlocutor is found, which is unblocked
-		// by the interlocutor gorouting
-		chat_secrets := <-user.readChannel
-		communication.SendMessage(conn, chat_secrets)
-		err := user.syncWithInterlocutor(conn, buffer)
-		if err != nil {
-			log.Println("Chat synchronization error:", err)
+		// by the interlocutor goroutine
+		select {
+		case chat_secrets, ok := <-client.readChannel:
+			delete(s.waitingPool, clientName)
+			if !ok {
+				log.Println(ErrReadChannelClosed)
+				return
+			}
+			if err = communication.SendMessage(conn, chat_secrets); err != nil {
+				return
+			}
+			err := client.SyncWithInterlocutor(conn, buffer)
+			if err != nil {
+				log.Println("Chat synchronization error:", err)
+				return
+			}
+		// If the interlocutor doesn't show up in time, remove the client from the waiting pool
+		case <-time.After(constants.INTERLOCUTOR_WAIT_TIME * time.Second):
+			delete(s.waitingPool, clientName)
+			communication.SendMessage(conn, constants.INTERLOCUTOR_WAIT_TIMEOUT)
 			return
 		}
 	}
@@ -102,16 +122,19 @@ func (s *DHServer) HandleConnection(conn net.Conn) {
 	// Here comes the actual chatting!
 	for {
 		select {
-		case interlocutorMessage := <-user.readChannel:
-			log.Printf("A[%s=>%s]: %s", user.interlocutor, user.name, interlocutorMessage)
-			err := communication.SendMessage(conn, interlocutorMessage)
-			if err != nil {
+		case interlocutorMessage, ok := <-client.readChannel:
+			if !ok {
+				log.Println(ErrReadChannelClosed)
+				return
+			}
+			log.Printf("[%s=>%s]: %s", client.interlocutor, client.name, interlocutorMessage)
+			if err := communication.SendMessage(conn, interlocutorMessage); err != nil {
 				log.Println("Couldn't send the message:", err)
 				continue
 			}
-		case userMessage := <-ioReadChannel:
-			log.Printf("B[%s=>%s]: %s", user.name, user.interlocutor, userMessage)
-			user.writeChannel <- userMessage
+		case clientMessage := <-ioReadChannel:
+			log.Printf("[%s=>%s]: %s", client.name, client.interlocutor, clientMessage)
+			client.writeChannel <- clientMessage
 		case err := <-errorChannel:
 			if err.Error() == io.EOF.Error() {
 				log.Println("Connection closed by client")

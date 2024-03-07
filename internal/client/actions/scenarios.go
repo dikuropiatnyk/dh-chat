@@ -17,8 +17,7 @@ func ConfirmChat(userConnection net.Conn, buffer []byte, reader *bufio.Reader) e
 	}
 
 	// Send the confirmation to the user
-	err = communication.SendMessage(userConnection, userConfirmation)
-	if err != nil {
+	if err = communication.SendMessage(userConnection, userConfirmation); err != nil {
 		return err
 	}
 	// Read the confirmation from the interlocutor

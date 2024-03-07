@@ -44,7 +44,9 @@ func (c *DHClient) Interact(conn net.Conn) {
 		log.Fatalln("Couldn't read the interlocutor's name:", err)
 	}
 	// Concatenate the user name and the interlocutor's name
-	communication.SendMessage(conn, userName+constants.DATA_SEPARATOR+interlocutorName)
+	if err = communication.SendMessage(conn, userName+constants.DATA_SEPARATOR+interlocutorName); err != nil {
+		return
+	}
 
 	buffer := make([]byte, constants.BUFFER_SIZE)
 	// First reading from the connection to get the user name and the interlocutor
@@ -61,6 +63,9 @@ func (c *DHClient) Interact(conn net.Conn) {
 		if serverUpdate == constants.INTERLOCUTOR_FOUND {
 			log.Println("Interlocutor found! Start chatting...")
 			actions.ConfirmChat(conn, buffer, reader)
+		} else if serverUpdate == constants.INTERLOCUTOR_WAIT_TIMEOUT {
+			log.Println("No interlocutor found! Try again later...")
+			return
 		}
 	} else if serverResponse == constants.INTERLOCUTOR_FOUND {
 		log.Println("Interlocutor found! Start chatting...")

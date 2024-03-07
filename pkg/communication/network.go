@@ -8,7 +8,6 @@ import (
 func ReadMessage(conn net.Conn, buffer []byte) (string, error) {
 	n, err := conn.Read(buffer)
 	if err != nil {
-		log.Println("Couldn't read a message:", err)
 		return "", err
 	}
 	return string(buffer[:n]), nil
