@@ -20,6 +20,11 @@ type DHClient struct {
 	writeChannel  chan string
 }
 
+func NewDHClient(clientAddress net.Addr, name string, interlocutorName string) *DHClient {
+	log.Printf("New client %s connected. Address: %s Interlocutor: %s\n", name, clientAddress.String(), interlocutorName)
+	return &DHClient{clientAddress: clientAddress, name: name, interlocutor: interlocutorName}
+}
+
 func (c *DHClient) Close() {
 	if c.writeChannel != nil {
 		close(c.writeChannel)

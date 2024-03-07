@@ -17,11 +17,32 @@ type DHServer struct {
 	addrress    string
 	listener    net.Listener
 	waitingPool map[string]*DHClient
-	mut         sync.Mutex
+	mut         sync.RWMutex
 }
 
 func NewDHServer() *DHServer {
 	return &DHServer{addrress: constants.SERVER_ADDRESS, waitingPool: make(map[string]*DHClient)}
+}
+
+func (s *DHServer) CheckWaitingPool(interlocutorName string) (*DHClient, bool) {
+	s.mut.RLock()
+	defer s.mut.RUnlock()
+	interlocutor, ok := s.waitingPool[interlocutorName]
+	return interlocutor, ok
+}
+
+func (s *DHServer) AddClientToWaitingPool(clientName string, client *DHClient) {
+	s.mut.Lock()
+	s.waitingPool[clientName] = client
+	s.mut.Unlock()
+	log.Printf("Added %s to the waiting pool\n", clientName)
+}
+
+func (s *DHServer) DeleteClientFromWaitingPool(clientName string) {
+	s.mut.Lock()
+	delete(s.waitingPool, clientName)
+	s.mut.Unlock()
+	log.Printf("Deleted %s from the waiting pool\n", clientName)
 }
 
 func (s *DHServer) Start() {
@@ -61,14 +82,13 @@ func (s *DHServer) HandleConnection(conn net.Conn) {
 	clientDataSlice := strings.Split(clientData, constants.DATA_SEPARATOR)
 	clientName, interlocutor := clientDataSlice[0], clientDataSlice[1]
 
-	client := &DHClient{clientAddress: conn.RemoteAddr(), name: clientName, interlocutor: interlocutor}
+	client := NewDHClient(conn.RemoteAddr(), clientName, interlocutor)
 	defer client.Close()
 
-	// s.mut.Lock()
 	// Check if the interlocutor is in the waiting pool
-	availableclient, ok := s.waitingPool[interlocutor]
-	if ok && availableclient.interlocutor == clientName {
-		client.readChannel, client.writeChannel = availableclient.writeChannel, availableclient.readChannel
+	availableClient, ok := s.CheckWaitingPool(interlocutor)
+	if ok && availableClient.interlocutor == clientName {
+		client.readChannel, client.writeChannel = availableClient.writeChannel, availableClient.readChannel
 		if err = communication.SendMessage(conn, constants.INTERLOCUTOR_FOUND); err != nil {
 			return
 		}
@@ -80,11 +100,9 @@ func (s *DHServer) HandleConnection(conn net.Conn) {
 			log.Println("Chat synchronization error:", err)
 			return
 		}
-		// Remove the interlocutor from the waiting pool
-		delete(s.waitingPool, interlocutor)
 	} else {
 		client.readChannel, client.writeChannel = make(chan string, 2), make(chan string, 2)
-		s.waitingPool[clientName] = client
+		s.AddClientToWaitingPool(clientName, client)
 		if err = communication.SendMessage(conn, constants.NO_INTERLOCUTOR); err != nil {
 			return
 		}
@@ -92,7 +110,7 @@ func (s *DHServer) HandleConnection(conn net.Conn) {
 		// by the interlocutor goroutine
 		select {
 		case chat_secrets, ok := <-client.readChannel:
-			delete(s.waitingPool, clientName)
+			s.DeleteClientFromWaitingPool(clientName)
 			if !ok {
 				log.Println(ErrReadChannelClosed)
 				return
@@ -107,12 +125,11 @@ func (s *DHServer) HandleConnection(conn net.Conn) {
 			}
 		// If the interlocutor doesn't show up in time, remove the client from the waiting pool
 		case <-time.After(constants.INTERLOCUTOR_WAIT_TIME * time.Second):
-			delete(s.waitingPool, clientName)
+			s.DeleteClientFromWaitingPool(clientName)
 			communication.SendMessage(conn, constants.INTERLOCUTOR_WAIT_TIMEOUT)
 			return
 		}
 	}
-	// s.mut.Unlock()
 
 	ioReadChannel := make(chan string)
 	errorChannel := make(chan error)
