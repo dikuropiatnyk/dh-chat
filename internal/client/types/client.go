@@ -8,8 +8,10 @@ import (
 	"sync"
 
 	"github.com/dikuropiatnyk/dh-chat/internal/client/actions"
+	"github.com/dikuropiatnyk/dh-chat/internal/client/gui"
 	"github.com/dikuropiatnyk/dh-chat/internal/constants"
 	"github.com/dikuropiatnyk/dh-chat/pkg/communication"
+	"github.com/jroimartin/gocui"
 )
 
 type DHClient struct {
@@ -73,9 +75,26 @@ func (c *DHClient) Interact(conn net.Conn) {
 	}
 	log.Println("Let the chat begin!")
 
+	g, err := gocui.NewGui(gocui.OutputNormal)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	defer g.Close()
+	g.Cursor = true
+
+	g.SetManagerFunc(gui.InitLayout)
+
 	var wg sync.WaitGroup
-	wg.Add(2)
-	go actions.HandleServerResponse(conn, buffer, &wg)
-	go actions.HandleUserResponse(conn, reader, &wg)
+	wg.Add(1)
+	// Set the keybindings
+	if err = gui.SetKeyBindings(g, conn, &wg); err != nil {
+		log.Fatalln(err)
+	}
+
+	go actions.HandleServerResponse(conn, buffer, g)
+
+	if err := g.MainLoop(); err != nil && err != gocui.ErrQuit {
+		log.Fatalln(err)
+	}
 	wg.Wait()
 }

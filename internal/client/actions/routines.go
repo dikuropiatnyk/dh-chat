@@ -1,34 +1,27 @@
 package actions
 
 import (
-	"bufio"
-	"fmt"
+	"io"
 	"log"
 	"net"
-	"sync"
+	"os"
 
+	"github.com/dikuropiatnyk/dh-chat/internal/client/gui"
 	"github.com/dikuropiatnyk/dh-chat/pkg/communication"
+	"github.com/jroimartin/gocui"
 )
 
-func HandleServerResponse(conn net.Conn, buffer []byte, wg *sync.WaitGroup) {
-	defer wg.Done()
+func HandleServerResponse(conn net.Conn, buffer []byte, renderedGUI *gocui.Gui) {
 	for {
 		serverMessage, err := communication.ReadMessage(conn, buffer)
 		if err != nil {
-			log.Fatalln(err)
+			if err.Error() == io.EOF.Error() {
+				renderedGUI.Close()
+				log.Println("Connection closed by the server, see ya!")
+				os.Exit(0)
+			}
 		}
-		fmt.Printf("\n>> %s\n", serverMessage)
-	}
-}
-
-func HandleUserResponse(conn net.Conn, reader *bufio.Reader, wg *sync.WaitGroup) {
-	defer wg.Done()
-	for {
-		userMessage, err := communication.GetInput("", reader)
-		if err != nil {
-			log.Fatalln(err)
-		}
-		if err = communication.SendMessage(conn, userMessage); err != nil {
+		if err = gui.UpdateChatView(renderedGUI, "> "+serverMessage); err != nil {
 			log.Fatalln(err)
 		}
 	}
