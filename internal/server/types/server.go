@@ -90,6 +90,7 @@ func (s *DHServer) HandleConnection(conn net.Conn) {
 	if ok && availableClient.interlocutor == clientName {
 		client.readChannel, client.writeChannel = availableClient.writeChannel, availableClient.readChannel
 		if err = communication.SendMessage(conn, constants.INTERLOCUTOR_FOUND); err != nil {
+			log.Println("Couldn't send the message:", err)
 			return
 		}
 		client.writeChannel <- constants.INTERLOCUTOR_FOUND
@@ -104,6 +105,7 @@ func (s *DHServer) HandleConnection(conn net.Conn) {
 		client.readChannel, client.writeChannel = make(chan string, 2), make(chan string, 2)
 		s.AddClientToWaitingPool(clientName, client)
 		if err = communication.SendMessage(conn, constants.NO_INTERLOCUTOR); err != nil {
+			log.Println("Couldn't send the message:", err)
 			return
 		}
 		// Set up a blocking waiter until the interlocutor is found, which is unblocked
@@ -116,6 +118,7 @@ func (s *DHServer) HandleConnection(conn net.Conn) {
 				return
 			}
 			if err = communication.SendMessage(conn, chat_secrets); err != nil {
+				log.Println("Couldn't send the message:", err)
 				return
 			}
 			err := client.SyncWithInterlocutor(conn, buffer)
@@ -126,7 +129,9 @@ func (s *DHServer) HandleConnection(conn net.Conn) {
 		// If the interlocutor doesn't show up in time, remove the client from the waiting pool
 		case <-time.After(constants.INTERLOCUTOR_WAIT_TIME * time.Second):
 			s.DeleteClientFromWaitingPool(clientName)
-			communication.SendMessage(conn, constants.INTERLOCUTOR_WAIT_TIMEOUT)
+			if err = communication.SendMessage(conn, constants.INTERLOCUTOR_WAIT_TIMEOUT); err != nil {
+				log.Println("Couldn't send the message:", err)
+			}
 			return
 		}
 	}
@@ -144,13 +149,13 @@ func (s *DHServer) HandleConnection(conn net.Conn) {
 				log.Println(ErrReadChannelClosed)
 				return
 			}
-			log.Printf("[%s=>%s]: %s", client.interlocutor, client.name, interlocutorMessage)
+			log.Printf("[%s] received message from [%s]: %s", client.name, client.interlocutor, interlocutorMessage)
 			if err := communication.SendMessage(conn, interlocutorMessage); err != nil {
 				log.Println("Couldn't send the message:", err)
 				continue
 			}
 		case clientMessage := <-ioReadChannel:
-			log.Printf("[%s=>%s]: %s", client.name, client.interlocutor, clientMessage)
+			log.Printf("[%s] sent message to [%s]: %s", client.name, client.interlocutor, clientMessage)
 			client.writeChannel <- clientMessage
 		case err := <-errorChannel:
 			if err.Error() == io.EOF.Error() {

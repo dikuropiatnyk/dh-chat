@@ -37,7 +37,7 @@ func (c *DHClient) Interact(conn net.Conn) {
 	reader := bufio.NewReader(os.Stdin)
 
 	// Read user input and send it to the server
-	userName, err := communication.GetInput("Enter your name: ", reader)
+	clientName, err := communication.GetInput("Enter your name: ", reader)
 	if err != nil {
 		log.Fatalln("Couldn't read the name:", err)
 	}
@@ -46,8 +46,8 @@ func (c *DHClient) Interact(conn net.Conn) {
 		log.Fatalln("Couldn't read the interlocutor's name:", err)
 	}
 	// Concatenate the user name and the interlocutor's name
-	if err = communication.SendMessage(conn, userName+constants.DATA_SEPARATOR+interlocutorName); err != nil {
-		return
+	if err = communication.SendMessage(conn, clientName+constants.DATA_SEPARATOR+interlocutorName); err != nil {
+		log.Fatalln("Couldn't send the user info:", err)
 	}
 
 	buffer := make([]byte, constants.BUFFER_SIZE)
@@ -87,11 +87,11 @@ func (c *DHClient) Interact(conn net.Conn) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	// Set the keybindings
-	if err = gui.SetKeyBindings(g, conn, &wg); err != nil {
+	if err = gui.SetKeyBindings(g, conn, &wg, clientName); err != nil {
 		log.Fatalln(err)
 	}
 
-	go actions.HandleServerResponse(conn, buffer, g)
+	go actions.HandleServerResponse(conn, buffer, g, interlocutorName)
 
 	if err := g.MainLoop(); err != nil && err != gocui.ErrQuit {
 		log.Fatalln(err)

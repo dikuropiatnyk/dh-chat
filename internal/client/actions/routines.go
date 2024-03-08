@@ -11,7 +11,7 @@ import (
 	"github.com/jroimartin/gocui"
 )
 
-func HandleServerResponse(conn net.Conn, buffer []byte, renderedGUI *gocui.Gui) {
+func HandleServerResponse(conn net.Conn, buffer []byte, renderedGUI *gocui.Gui, interlocutorName string) {
 	for {
 		serverMessage, err := communication.ReadMessage(conn, buffer)
 		if err != nil {
@@ -21,7 +21,7 @@ func HandleServerResponse(conn net.Conn, buffer []byte, renderedGUI *gocui.Gui) 
 				os.Exit(0)
 			}
 		}
-		if err = gui.UpdateChatView(renderedGUI, "> "+serverMessage); err != nil {
+		if err = gui.UpdateChatView(renderedGUI, serverMessage, interlocutorName); err != nil {
 			log.Fatalln(err)
 		}
 	}
