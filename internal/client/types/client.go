@@ -86,8 +86,8 @@ func (c *DHClient) Interact(conn net.Conn) {
 				log.Fatalln("Couldn't shake hands with the interlocutor:", err)
 			}
 			c.key = derivedKey
-		case strings.HasPrefix(serverResponse, constants.INTERLOCUTOR_WAIT_TIMEOUT):
-			log.Println("No interlocutor found! Try again later...")
+		case strings.HasPrefix(serverUpdate, constants.INTERLOCUTOR_WAIT_TIMEOUT):
+			log.Println("Interlocutor didn't show up! Exiting...")
 			return
 
 		default:

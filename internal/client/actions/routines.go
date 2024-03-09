@@ -1,6 +1,7 @@
 package actions
 
 import (
+	"errors"
 	"io"
 	"log"
 	"net"
@@ -19,8 +20,11 @@ func HandleServerResponse(conn net.Conn, buffer []byte, renderedGUI *gocui.Gui, 
 				renderedGUI.Close()
 				log.Println("Connection closed by the server, see ya!")
 				os.Exit(0)
+			} else if errors.Is(err, net.ErrClosed) {
+				log.Println("Connection closed by the user, see ya!")
+				os.Exit(0)
 			} else {
-				log.Fatalln("Couldn't read the message: ", err)
+				log.Fatalln("Couldn't read the message. Unexpected error: ", err)
 			}
 		}
 		if err = gui.UpdateChatView(renderedGUI, serverMessage, interlocutorName); err != nil {

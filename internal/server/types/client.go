@@ -40,7 +40,7 @@ func (c *DHClient) SyncWithInterlocutor(clientConnection net.Conn, buffer []byte
 	if err != nil {
 		return err
 	}
-	log.Printf("Received a public salt from %s!", c.name)
+	log.Printf("Received a public salt from %s!\n%s", c.name, clientPublicSalt)
 	// Send the client confirmation to the interlocutor
 	c.writeChannel <- clientPublicSalt
 
@@ -96,6 +96,9 @@ func (c *DHClient) HandleSecondClient(conn net.Conn, buffer []byte) error {
 	if err != nil {
 		return err
 	}
+
+	log.Printf("Generated base secrets for chat %s <=> %s!\np=%s, g=%s\n", c.name, c.interlocutor, p.String(), g.String())
+
 	// Prepare the message with base secrets to send to both clients
 	sharedMessage := constants.INTERLOCUTOR_FOUND + constants.DATA_SEPARATOR + p.String() + constants.DATA_SEPARATOR + g.String()
 	// Send the message to the current client

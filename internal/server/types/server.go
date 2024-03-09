@@ -129,14 +129,14 @@ func (s *DHServer) HandleConnection(conn net.Conn) {
 				log.Println(ErrReadChannelClosed)
 				return
 			}
-			log.Printf("[%s] received message from [%s]: %s", client.name, client.interlocutor, interlocutorMessage)
 			if err := communication.SendMessage(conn, interlocutorMessage); err != nil {
 				log.Println("Couldn't send the message:", err)
 				continue
 			}
+			log.Printf("[%s] received message from [%s]: \n%s\n", client.name, client.interlocutor, interlocutorMessage)
 		case clientMessage := <-ioReadChannel:
-			log.Printf("[%s] sent message to [%s]: %s", client.name, client.interlocutor, clientMessage)
 			client.writeChannel <- clientMessage
+			log.Printf("[%s] sent message to [%s]: \n%s\n", client.name, client.interlocutor, clientMessage)
 		case err := <-errorChannel:
 			if err.Error() == io.EOF.Error() {
 				log.Println("Connection closed by client")

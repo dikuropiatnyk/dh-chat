@@ -26,7 +26,6 @@ func Shakedown(userConnection net.Conn, buffer []byte, reader *bufio.Reader, sha
 	}
 	// The shared message is in the format "signal:p:g"
 	pStr, gStr := sharedMessageSlice[1], sharedMessageSlice[2]
-	log.Printf("Received public secrets: p=%s, g=%s\n", pStr, gStr)
 
 	// Convert the public secrets to big integers
 	p, success := new(big.Int).SetString(pStr, 10)
@@ -70,7 +69,6 @@ func Shakedown(userConnection net.Conn, buffer []byte, reader *bufio.Reader, sha
 	if !success {
 		return nil, ErrStringToBigInt
 	}
-	log.Printf("Received public salt from the interlocutor: %s\n", interlocutorPublicSaltStr)
 
 	// Generate the symmetric key
 	symmetricKey := diffiehellman.GenerateSymmetricKey(p, interlocutorPublicSalt, privateSalt)
