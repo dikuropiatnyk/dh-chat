@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"strings"
 	"sync"
 
 	"github.com/dikuropiatnyk/dh-chat/internal/client/actions"
@@ -17,6 +18,7 @@ import (
 type DHClient struct {
 	clientAddress net.Addr
 	serverAddress net.Addr
+	key           []byte
 }
 
 func (c *DHClient) Connect() (net.Conn, error) {
@@ -56,23 +58,43 @@ func (c *DHClient) Interact(conn net.Conn) {
 	if err != nil {
 		log.Fatalln("Couldn't get a user info:", err)
 	}
-	if serverResponse == constants.NO_INTERLOCUTOR {
+
+	switch {
+	case strings.HasPrefix(serverResponse, constants.CLIENT_EXISTS):
+		log.Fatalln("Client already exists! Exiting...")
+
+	case strings.HasPrefix(serverResponse, constants.INTERLOCUTOR_FOUND):
+		log.Println("Interlocutor found! Start chatting...")
+		derivedKey, err := actions.Shakedown(conn, buffer, reader, serverResponse)
+		if err != nil {
+			log.Fatalln("Couldn't shake hands with the interlocutor:", err)
+		}
+		c.key = derivedKey
+
+	case strings.HasPrefix(serverResponse, constants.NO_INTERLOCUTOR):
 		log.Println("No interlocutor found! Wait, please...")
 		serverUpdate, err := communication.ReadMessage(conn, buffer)
 		if err != nil {
 			log.Fatalln("Couldn't get a user info:", err)
 		}
-		if serverUpdate == constants.INTERLOCUTOR_FOUND {
+
+		switch {
+		case strings.HasPrefix(serverUpdate, constants.INTERLOCUTOR_FOUND):
 			log.Println("Interlocutor found! Start chatting...")
-			actions.ConfirmChat(conn, buffer, reader)
-		} else if serverUpdate == constants.INTERLOCUTOR_WAIT_TIMEOUT {
+			derivedKey, err := actions.Shakedown(conn, buffer, reader, serverUpdate)
+			if err != nil {
+				log.Fatalln("Couldn't shake hands with the interlocutor:", err)
+			}
+			c.key = derivedKey
+		case strings.HasPrefix(serverResponse, constants.INTERLOCUTOR_WAIT_TIMEOUT):
 			log.Println("No interlocutor found! Try again later...")
 			return
+
+		default:
+			log.Fatalln("Unknown server response! Exiting...")
 		}
-	} else if serverResponse == constants.INTERLOCUTOR_FOUND {
-		log.Println("Interlocutor found! Start chatting...")
-		actions.ConfirmChat(conn, buffer, reader)
 	}
+
 	log.Println("Let the chat begin!")
 
 	g, err := gocui.NewGui(gocui.OutputNormal)
@@ -87,11 +109,11 @@ func (c *DHClient) Interact(conn net.Conn) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	// Set the keybindings
-	if err = gui.SetKeyBindings(g, conn, &wg, clientName); err != nil {
+	if err = gui.SetKeyBindings(g, conn, &wg, clientName, c.key); err != nil {
 		log.Fatalln(err)
 	}
 
-	go actions.HandleServerResponse(conn, buffer, g, interlocutorName)
+	go actions.HandleServerResponse(conn, buffer, g, interlocutorName, c.key)
 
 	if err := g.MainLoop(); err != nil && err != gocui.ErrQuit {
 		log.Fatalln(err)

@@ -6,7 +6,6 @@ import (
 	"net"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/dikuropiatnyk/dh-chat/internal/constants"
 	"github.com/dikuropiatnyk/dh-chat/internal/server/actions"
@@ -24,11 +23,11 @@ func NewDHServer() *DHServer {
 	return &DHServer{addrress: constants.SERVER_ADDRESS, waitingPool: make(map[string]*DHClient)}
 }
 
-func (s *DHServer) CheckWaitingPool(interlocutorName string) (*DHClient, bool) {
+func (s *DHServer) CheckWaitingPool(clientName string) (*DHClient, bool) {
 	s.mut.RLock()
 	defer s.mut.RUnlock()
-	interlocutor, ok := s.waitingPool[interlocutorName]
-	return interlocutor, ok
+	client, ok := s.waitingPool[clientName]
+	return client, ok
 }
 
 func (s *DHServer) AddClientToWaitingPool(clientName string, client *DHClient) {
@@ -82,56 +81,37 @@ func (s *DHServer) HandleConnection(conn net.Conn) {
 	clientDataSlice := strings.Split(clientData, constants.DATA_SEPARATOR)
 	clientName, interlocutor := clientDataSlice[0], clientDataSlice[1]
 
+	// Making sure the client is not already in the waiting pool
+	_, ok := s.CheckWaitingPool(clientName)
+	if ok {
+		log.Printf("Client %s is already in the waiting pool!\n", clientName)
+		if err = communication.SendMessage(conn, constants.CLIENT_EXISTS); err != nil {
+			log.Println("Couldn't send the message:", err)
+			return
+		}
+		return
+	}
+
 	client := NewDHClient(conn.RemoteAddr(), clientName, interlocutor)
 	defer client.Close()
 
 	// Check if the interlocutor is in the waiting pool
 	availableClient, ok := s.CheckWaitingPool(interlocutor)
-	if ok && availableClient.interlocutor == clientName {
-		client.readChannel, client.writeChannel = availableClient.writeChannel, availableClient.readChannel
-		if err = communication.SendMessage(conn, constants.INTERLOCUTOR_FOUND); err != nil {
-			log.Println("Couldn't send the message:", err)
-			return
-		}
-		client.writeChannel <- constants.INTERLOCUTOR_FOUND
-
-		// Synchronize the chat between the current client and the interlocutor
-		err := client.SyncWithInterlocutor(conn, buffer)
-		if err != nil {
-			log.Println("Chat synchronization error:", err)
-			return
-		}
-	} else {
+	// If no interlocutor is found, add the client to the waiting pool
+	if !(ok && availableClient.interlocutor == clientName) {
 		client.readChannel, client.writeChannel = make(chan string, 2), make(chan string, 2)
 		s.AddClientToWaitingPool(clientName, client)
-		if err = communication.SendMessage(conn, constants.NO_INTERLOCUTOR); err != nil {
-			log.Println("Couldn't send the message:", err)
+		err = client.HandleFirstClient(conn, buffer)
+		s.DeleteClientFromWaitingPool(clientName)
+		if err != nil {
+			log.Println("Client handling error:", err)
 			return
 		}
-		// Set up a blocking waiter until the interlocutor is found, which is unblocked
-		// by the interlocutor goroutine
-		select {
-		case chat_secrets, ok := <-client.readChannel:
-			s.DeleteClientFromWaitingPool(clientName)
-			if !ok {
-				log.Println(ErrReadChannelClosed)
-				return
-			}
-			if err = communication.SendMessage(conn, chat_secrets); err != nil {
-				log.Println("Couldn't send the message:", err)
-				return
-			}
-			err := client.SyncWithInterlocutor(conn, buffer)
-			if err != nil {
-				log.Println("Chat synchronization error:", err)
-				return
-			}
-		// If the interlocutor doesn't show up in time, remove the client from the waiting pool
-		case <-time.After(constants.INTERLOCUTOR_WAIT_TIME * time.Second):
-			s.DeleteClientFromWaitingPool(clientName)
-			if err = communication.SendMessage(conn, constants.INTERLOCUTOR_WAIT_TIMEOUT); err != nil {
-				log.Println("Couldn't send the message:", err)
-			}
+		// If the interlocutor is found, start an immediate synchronization
+	} else {
+		client.readChannel, client.writeChannel = availableClient.writeChannel, availableClient.readChannel
+		if err = client.HandleSecondClient(conn, buffer); err != nil {
+			log.Println("Client handling error:", err)
 			return
 		}
 	}

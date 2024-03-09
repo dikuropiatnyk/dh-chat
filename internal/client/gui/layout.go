@@ -37,7 +37,7 @@ func exit(_ *gocui.Gui, _ *gocui.View, wg *sync.WaitGroup) error {
 	return gocui.ErrQuit
 }
 
-func sendMessage(g *gocui.Gui, v *gocui.View, conn net.Conn, clientName string) error {
+func sendMessage(g *gocui.Gui, v *gocui.View, conn net.Conn, clientName string, clientKey []byte) error {
 	// Get the message from the input view
 	message := v.Buffer()
 	v.Clear()
@@ -53,14 +53,14 @@ func sendMessage(g *gocui.Gui, v *gocui.View, conn net.Conn, clientName string) 
 	fmt.Fprintf(chatView, "%s[%s] %s", constants.GREEN_COLOR, clientName, message)
 
 	// Send the message to the server
-	if err = communication.SendMessage(conn, message); err != nil {
+	if err = communication.SendEncryptedMessage(conn, message, clientKey); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func SetKeyBindings(g *gocui.Gui, conn net.Conn, wg *sync.WaitGroup, clientName string) error {
+func SetKeyBindings(g *gocui.Gui, conn net.Conn, wg *sync.WaitGroup, clientName string, clientKey []byte) error {
 	// Default keybingding to exit the application
 
 	if err := g.SetKeybinding(
@@ -76,7 +76,7 @@ func SetKeyBindings(g *gocui.Gui, conn net.Conn, wg *sync.WaitGroup, clientName 
 		constants.INPUT_VIEWNAME,
 		gocui.KeyEnter,
 		gocui.ModNone,
-		func(g *gocui.Gui, v *gocui.View) error { return sendMessage(g, v, conn, clientName) }); err != nil {
+		func(g *gocui.Gui, v *gocui.View) error { return sendMessage(g, v, conn, clientName, clientKey) }); err != nil {
 		return err
 	}
 	return nil

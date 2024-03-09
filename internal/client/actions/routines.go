@@ -11,14 +11,16 @@ import (
 	"github.com/jroimartin/gocui"
 )
 
-func HandleServerResponse(conn net.Conn, buffer []byte, renderedGUI *gocui.Gui, interlocutorName string) {
+func HandleServerResponse(conn net.Conn, buffer []byte, renderedGUI *gocui.Gui, interlocutorName string, clientKey []byte) {
 	for {
-		serverMessage, err := communication.ReadMessage(conn, buffer)
+		serverMessage, err := communication.ReadEncryptedMessage(conn, buffer, clientKey)
 		if err != nil {
 			if err.Error() == io.EOF.Error() {
 				renderedGUI.Close()
 				log.Println("Connection closed by the server, see ya!")
 				os.Exit(0)
+			} else {
+				log.Fatalln("Couldn't read the message: ", err)
 			}
 		}
 		if err = gui.UpdateChatView(renderedGUI, serverMessage, interlocutorName); err != nil {
