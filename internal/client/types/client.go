@@ -65,7 +65,7 @@ func (c *DHClient) Interact(conn net.Conn) {
 
 	case strings.HasPrefix(serverResponse, constants.INTERLOCUTOR_FOUND):
 		log.Println("Interlocutor found! Start chatting...")
-		derivedKey, err := actions.Shakedown(conn, buffer, reader, serverResponse)
+		derivedKey, err := actions.Handshake(conn, buffer, reader, serverResponse)
 		if err != nil {
 			log.Fatalln("Couldn't shake hands with the interlocutor:", err)
 		}
@@ -81,7 +81,7 @@ func (c *DHClient) Interact(conn net.Conn) {
 		switch {
 		case strings.HasPrefix(serverUpdate, constants.INTERLOCUTOR_FOUND):
 			log.Println("Interlocutor found! Start chatting...")
-			derivedKey, err := actions.Shakedown(conn, buffer, reader, serverUpdate)
+			derivedKey, err := actions.Handshake(conn, buffer, reader, serverUpdate)
 			if err != nil {
 				log.Fatalln("Couldn't shake hands with the interlocutor:", err)
 			}

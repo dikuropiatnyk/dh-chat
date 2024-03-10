@@ -19,7 +19,7 @@ func GenerateBaseSecrets() (*big.Int, *big.Int, error) {
 		return &big.Int{}, &big.Int{}, err
 	}
 	// Create a "strong" prime number, which is a prime number of the form 2q+1 - this will be the modulus
-	p := new(big.Int).Mul(big.NewInt(2), q)
+	p := new(big.Int).Add(new(big.Int).Mul(big.NewInt(2), q), big.NewInt(1))
 	// With such approach, p will be guaranteed to be a huge prime number,
 	// g (generator) can be 2, because such p values will always
 	// have primitive root modulo of {1, 2, q, 2q}

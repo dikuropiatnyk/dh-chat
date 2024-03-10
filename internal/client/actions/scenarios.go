@@ -16,8 +16,8 @@ import (
 
 var ErrStringToBigInt = errors.New("couldn't convert the string to a big integer")
 
-// A shakedown of the chat between the user and the interlocutor
-func Shakedown(userConnection net.Conn, buffer []byte, reader *bufio.Reader, sharedMessage string) ([]byte, error) {
+// A handshake of the chat between the user and the interlocutor
+func Handshake(userConnection net.Conn, buffer []byte, reader *bufio.Reader, sharedMessage string) ([]byte, error) {
 	// Split the client data into the client name and the interlocutor
 	// The client data is in the format "clientName;interlocutor"
 	sharedMessageSlice := strings.Split(sharedMessage, constants.DATA_SEPARATOR)
